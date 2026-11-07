@@ -1,0 +1,9 @@
+[
+  {"q": "When is general waste collected?", "must_contain": ["Tuesday"]},
+  {"q": "How much does a resident parking permit cost?", "must_contain": ["40"]},
+  {"q": "What time does the council office open on Saturday?", "must_contain": ["closed"]},
+  {"q": "How do I book bulky waste pickup?", "must_contain": ["bulky"]},
+  {"q": "What documents do I need for a parking permit?", "must_contain": ["proof of address"]},
+  {"q": "What's the best pizza place in town?", "expect_no_answer": true},
+  {"q": "Who won the football match yesterday?", "expect_no_answer": true}
+]
