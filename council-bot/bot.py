@@ -1,5 +1,8 @@
+import asyncio
 import collections
+import json
 import logging
+import re
 import time
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -17,6 +20,7 @@ import config
 import council_lookup
 import db
 import rag
+import trello_client
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("council-bot")
@@ -204,6 +208,17 @@ async def got_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     dup = db.find_duplicate_ticket(category, resolved_loc)
     if dup:
         db.subscribe_to_ticket(dup["id"], update.effective_user.id)
+        if "trello_card_id" in dup.keys() and dup["trello_card_id"]:
+            trello = trello_client.get_trello_client()
+            if trello:
+                try:
+                    who = f"@{update.effective_user.username}" if update.effective_user.username else update.effective_user.full_name
+                    await trello.add_comment(
+                        dup["trello_card_id"],
+                        f"Duplicate report merged: neighbour {who} subscribed to Ticket #{dup['id']}.",
+                    )
+                except Exception as exc:
+                    log.warning("Could not comment on Trello card %s: %s", dup["trello_card_id"], exc)
         context.user_data.pop("draft", None)
         await msg.reply_text(
             f"📍 Location: **{resolved_loc}** ({council})\n\n"
@@ -277,18 +292,42 @@ async def finish_report(update: Update, context: ContextTypes.DEFAULT_TYPE, phot
         ai_diagnosis=ai_diag,
         severity=severity,
     )
+    who = f"@{user.username}" if user.username else user.full_name
+
+    # Submit work order to Trello board (when TRELLO_BOARD_ID is configured)
+    trello_line = ""
+    trello = trello_client.get_trello_client()
+    if trello:
+        try:
+            card = await trello.submit_work_order(
+                ticket_id=tid,
+                category=d["category"],
+                description=d["description"],
+                location=d.get("location"),
+                town_council=council,
+                severity=severity,
+                ai_diagnosis=ai_diag,
+                reporter=who,
+                lat=lat,
+                lng=lng,
+            )
+            db.set_trello_card(tid, card.card_id, card.card_url)
+            trello_line = f"📋 Trello ({card.list_name}): {card.card_url}\n"
+        except Exception as exc:
+            log.warning("Trello work-order creation failed for ticket #%s: %s", tid, exc)
+
     await update.message.reply_text(
         f"✅ Report #{tid} created and tagged for **{council}**.\n\n"
         f"Check it any time with `/status {tid}`. I'll message you when there's an update.",
         parse_mode="Markdown",
     )
-    who = f"@{user.username}" if user.username else user.full_name
     note = (
         f"🆕 Ticket #{tid} [{d['category']}] from {who}\n"
         f"🏛️ Council: {council}\n"
         f"⚠️ Severity: {severity.upper()}\n"
         f"📍 {d.get('location')}\n"
         + (f"🤖 AI Diagnosis: {ai_diag}\n" if ai_diag else "")
+        + trello_line
         + f"📝 {d['description']}\n\n"
         f"/progress {tid} note   |   /resolve {tid} note"
     )
@@ -391,6 +430,13 @@ async def _set_status(update: Update, context: ContextTypes.DEFAULT_TYPE, status
         return
     note = " ".join(context.args[1:]) or None
     db.set_status(tid, status, note)
+    if "trello_card_id" in t.keys() and t["trello_card_id"]:
+        trello = trello_client.get_trello_client()
+        if trello:
+            try:
+                await trello.update_status(t["trello_card_id"], status, note)
+            except Exception as exc:
+                log.warning("Trello status sync failed for ticket #%s: %s", tid, exc)
     extra = f"\nNote: {note}" if note else ""
     text = f"Update on your report #{tid}: {status}.{extra}"
 

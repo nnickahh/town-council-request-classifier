@@ -1,5 +1,6 @@
 """Staff dashboard. Run: streamlit run dashboard.py
 Reads the same SQLite database as the bot; replies/status changes are pushed to residents via the Telegram API."""
+import asyncio
 import json
 import os
 from datetime import date
@@ -11,6 +12,7 @@ import streamlit as st
 
 import config
 import db
+import trello_client
 
 st.set_page_config(page_title=f"{config.COUNCIL_NAME} · Operations", page_icon="🏛️", layout="wide")
 db.init()
@@ -51,6 +53,10 @@ def tg_photo(file_id):
 
 def update_ticket(t, status, note):
     db.set_status(t["id"], status, note or None)
+    if "trello_card_id" in t.keys() and t["trello_card_id"]:
+        trello = trello_client.get_trello_client()
+        if trello:
+            trello.update_status_sync(t["trello_card_id"], status, note or None)
     text = f"Update on your report #{t['id']}: {status}." + (f"\nNote: {note}" if note else "")
 
     subs = []
@@ -166,6 +172,31 @@ def render():
                     st.write(f"**Issue Description:** {t['description']}")
                     if "ai_diagnosis" in t.keys() and t["ai_diagnosis"]:
                         st.info(f"🤖 **AI Vision Inspection:** {t['ai_diagnosis']}")
+                    trello_url = t["trello_card_url"] if "trello_card_url" in t.keys() else None
+                    if trello_url:
+                        st.markdown(f"📋 **Trello Work Order:** [{trello_url}]({trello_url})")
+                    elif trello_client.get_trello_client() is not None:
+                        if st.button("📋 Submit Work Order to Trello", key=f"trello{t['id']}"):
+                            trello = trello_client.get_trello_client()
+                            try:
+                                card = asyncio.run(
+                                    trello.submit_work_order(
+                                        ticket_id=t["id"],
+                                        category=t["category"] or "other",
+                                        description=t["description"],
+                                        location=t["location"],
+                                        town_council=t["town_council"] if "town_council" in t.keys() else None,
+                                        severity=sev,
+                                        ai_diagnosis=t["ai_diagnosis"] if "ai_diagnosis" in t.keys() else None,
+                                        lat=t["lat"] if "lat" in t.keys() else None,
+                                        lng=t["lng"] if "lng" in t.keys() else None,
+                                    )
+                                )
+                                db.set_trello_card(t["id"], card.card_id, card.card_url)
+                                st.toast(f"Submitted Ticket #{t['id']} to Trello ({card.list_name}) ✅")
+                                st.rerun()
+                            except Exception as exc:
+                                st.error(f"Could not submit to Trello: {exc}")
                     st.caption(f"{council_badge}📍 {t['location'] or 'no location'} · created {t['created_at']} · resident id {t['user_id']}")
                     if "subscribers" in t.keys() and t["subscribers"]:
                         try:

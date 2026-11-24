@@ -1,100 +1,135 @@
-# town council request classifier
+# Town Council Request Classifier (EstateKaki)
 
-real-time telegram resident assistant and ticketing triage pipeline for singapore town councils.
+Real-time Telegram resident assistant, Semantic Hybrid RAG policy engine, and automated work-order ticketing pipeline for **all 17 Singapore Town Councils**.
 
-## overview
+## Overview
 
-**town council request classifier** (estatekaki) is an automated resident support and municipal issue reporting pipeline designed for town councils. built with a pre-llm emergency triage guard, grounded retrieval-augmented generation (rag), and an operations workbench, the bot answers resident bylaws inquiries and routes physical estate faults directly to staff.
+**EstateKaki** unifies 24/7 resident FAQ answering and estate fault reporting inside Telegram (zero app install required), paired with a live Streamlit Staff Operations Dashboard and optional **Trello Work-Order Dispatch**.
 
-residents interact directly via telegram with zero apps to install, while council officers manage, inspect, and resolve tickets through a real-time streamlit operations dashboard.
+### Key Features
 
-## what we've been building
+- **Upgraded Two-Stage Semantic Hybrid RAG (`semantic_rag.py` + `rag.py`)**:
+  - Structure-aware Markdown & section chunking with **100% atomic table preservation** and sentence-level semantic breakpoint splitting.
+  - **Contextual Breadcrumb Injection** (`[Document | Section]`) and **Small-to-Big Parent Context** assembly.
+  - **Hybrid Retrieval**: dense vector similarity (`gemini-embedding-001` with deterministic offline fallback) fused with sparse exact & Town Council priority token boosting (`1.2m`, `S&CC`, `EMSU`, `$5,000`, `10:30 PM`).
+  - **Singapore HDB / Singlish Query Expansion** bridging casual resident phrasing (*"throw old sofa"*, *"corridor barang"*) to official Town Council policies.
+  - **Strict Staff-Escalation Refusal Gate**: refuses out-of-scope questions instead of hallucinating and routes them to council staff.
+  - **Zero-Downtime Hot Re-Indexing**: staff answers approved in the dashboard become searchable immediately without restarting `bot.py`.
+- **17 Singapore Town Council Auto-Routing (`council_lookup.py` + `create_topics.py`)**:
+  - Resolves 6-digit Singapore postal codes, street names, and GPS pins via the **OneMap API** and maps them to the responsible Town Council.
+  - Posts alerts directly into per-council **Telegram Forum Topics** (`#ang-mo-kio`, `#tampines`, etc.).
+- **Pre-LLM Safety Guard & Statutory Agency Deflection**:
+  - Instant regex emergency interception for life-safety crises (**999 Police / 995 SCDF / 1767 SOS**).
+  - Automatic jurisdiction routing for **LTA** (bus stops/roads), **NParks** (wildlife/bee hives), **SFA** (hawker stalls), and **HDB** (internal flat defects).
+- **AI Vision Fault Inspection & Smart Duplicate Merging (`vision.py` + `db.py`)**:
+  - Gemini Vision diagnoses uploaded fault photos, assigns severity, and suggests the maintenance crew.
+  - Detects duplicate active reports at the same postal code/location and subscribes neighbours to the existing ticket for live updates.
+- **Automated Trello Work-Order Dispatch (`trello_client.py`)**:
+  - Automatically submits resident fault reports as structured Trello cards (routing **High / Critical** faults straight to `Urgent` with SLA due dates and routine faults to `To Do`).
+  - Logs duplicate neighbour subscriptions as card comments and syncs `/progress`, `/resolve`, and dashboard status updates to `In Progress` / `Done` lists.
+- **Staff Operations Dashboard (`dashboard.py`)**:
+  - Interactive **3D PyDeck GIS incident map** across Singapore, ticket queue with photo & Trello links, unanswered Q&A learning loop, and analytics.
 
-- **grounded inquiry answering**: resident queries (e.g. bulky waste collection, parking permit fees, corridor obstruction rules) are answered strictly from official council documents using vector embeddings with distance cutoffs. if the bot is unsure, it escalates to human staff rather than guessing.
-- **smart issue reporting & ticketing**: residents report municipal faults (broken streetlights, potholes, lift breakdowns, pest infestations) via natural chat. the bot collects location details, requests photo verification, and creates tracked work order tickets.
-- **pre-llm emergency detection**: regex and keyword triggers intercept life-threatening reports (fire, gas leaks, cardiac emergencies) before any model inference, immediately routing residents to official emergency lines (999 police, 995 scdf, 1767 crisis hotline).
-- **staff operations dashboard (`dashboard.py`)**: a live streamlit management desk with ticket queue tables, photo inspection, department routing, and one-click status updates that notify residents on telegram automatically.
-- **continuous knowledge loop**: staff answers to previously unanswered resident questions can be approved into the knowledge base with a single click, allowing the bot to learn autonomously.
-
-## architecture
+## Architecture
 
 ```mermaid
 graph TD
-    a["resident on telegram"] --> b["intent router and emergency guard"]
-    b -->|"general inquiries"| c["chroma rag knowledge base"]
-    b -->|"municipal faults"| d["ticket triage pipeline"]
-    b -->|"life-safety"| e["emergency notice (999 police / 995 scdf)"]
-    c -->|"verified response"| a
-    c -->|"unanswered question"| f["staff review queue"]
-    d -->|"work order"| g["sqlite council.db"]
-    g --> h["streamlit operations dashboard"]
-    f --> h
-    h -->|"staff resolution and notification"| a
+    A["Resident on Telegram"] --> B["Emergency Guard & Statutory Board Check"]
+    B -->|"Life-Safety"| E["999 Police / 995 SCDF / 1767 SOS"]
+    B -->|"LTA / NParks / SFA / HDB"| S["Statutory Agency Guidance"]
+    B -->|"Policy FAQ"| C["Two-Stage Semantic Hybrid RAG"]
+    B -->|"Estate Fault"| D["OneMap Postal Lookup & Vision Triage"]
+    C -->|"Grounded Answer + Sources"| A
+    C -->|"Below Relevance Cutoff"| F["Staff Review Queue"]
+    D -->|"Work Order + Dedup"| G["SQLite council.db"]
+    D -->|"Auto-Submit Card (Urgent / To Do)"| T["Trello Work-Order Board"]
+    D -->|"Per-Council Forum Topic"| TG["Staff Telegram Group"]
+    G --> H["Streamlit 3D GIS & Ops Dashboard"]
+    F --> H
+    H -->|"1-Click KB Approval (Hot Re-Index)"| C
+    H -->|"Status Update + Trello Sync"| A
 ```
 
-## project structure
+## Project Structure
 
-```
+```text
 town-council-request-classifier/
 ├── council-bot/
-│   ├── bot.py                  # telegram bot event handlers and resident ticket flow
-│   ├── dashboard.py            # streamlit staff operations dashboard and kanban
-│   ├── rag.py                  # vector retrieval and grounded answering pipeline
-│   ├── vision.py               # image inspection and damage verification
-│   ├── db.py                   # sqlite persistence for tickets, logs, and feedback
-│   ├── council_lookup.py       # postal code and constituency boundary lookup
-│   ├── config.py               # environment configuration and emergency regex patterns
-│   ├── ingest.py               # document chunking and vector embedding into chroma
-│   ├── eval.py                 # automated accuracy and refusal evaluation harness
-│   ├── seed_demo.py            # demo dataset seeder for live presentations
-│   ├── requirements.txt        # python dependencies
-│   ├── assets/                 # bot identity avatars and presentation graphics
-│   └── data/docs/              # official town council bylaws and service guides
-├── .gitignore                  # environment and local database exclusion rules
-└── readme.md                   # this documentation
+│   ├── bot.py                  # Telegram bot handlers, ticket flow & staff commands
+│   ├── semantic_rag.py         # Two-Stage Semantic Hybrid RAG engine & hot re-indexer
+│   ├── rag.py                  # RAG facade + intent/category router
+│   ├── trello_client.py        # Trello work-order submission & status sync
+│   ├── dashboard.py            # Streamlit 3D GIS map, ticket queue & KB approval UI
+│   ├── vision.py               # Gemini Vision photo damage inspection
+│   ├── council_lookup.py       # OneMap API, postal sector & statutory agency router
+│   ├── create_topics.py        # Auto-creates 17 Town Council Telegram forum topics
+│   ├── db.py                   # SQLite persistence (tickets, subscribers, Trello IDs, logs)
+│   ├── config.py               # Environment settings, RAG thresholds & emergency regex
+│   ├── ingest.py               # Semantic chunking & hybrid index builder
+│   ├── eval.py                 # RAG benchmark harness (Hit Rate @ 3, MRR, Refusal Acc.)
+│   ├── tests.json              # 27 Singapore Town Council + refusal evaluation queries
+│   ├── test_suite.py           # Pytest automated test suite (RAG, routing, DB, Trello)
+│   ├── seed_demo.py            # Demo data seeder for live presentations
+│   ├── requirements.txt        # Python dependencies
+│   ├── .env.example            # Environment variable template (Telegram, Gemini, Trello)
+│   └── data/docs/              # 9 official Singapore Town Council policy guides
+├── .gitignore
+└── readme.md
 ```
 
-## quick start
+## Quick Start
 
-### 1. environment setup
-navigate into the council bot directory and activate your virtual environment:
+### 1. Environment Setup
 ```bash
 cd council-bot
 python -m venv .venv
-source .venv/bin/activate  # on windows: .venv\Scripts\activate
+# Windows:
+.venv\Scripts\activate
+# macOS / Linux:
+source .venv/bin/activate
+
 pip install -r requirements.txt
 ```
 
-### 2. configuration
-copy the environment template and provide your bot token:
+### 2. Configure Environment Variables
 ```bash
 cp .env.example .env
 ```
-configure your `TELEGRAM_TOKEN` from botfather and set `STAFF_CHAT_ID`.
+Fill in `.env`:
+- `TELEGRAM_TOKEN` — Bot token from `@BotFather`
+- `STAFF_CHAT_ID` — Telegram staff group ID (send `/chatid` in the group)
+- `GEMINI_API_KEY` — Google AI Studio key (for Semantic RAG embeddings, synthesis, and Vision; optional — offline deterministic fallback works out of the box)
+- *(Optional Trello Work Orders)* `TRELLO_BOARD_ID`, `TRELLO_API_KEY`, `TRELLO_TOKEN` (with `To Do` and `Urgent` lists on your board; `In Progress` and `Done` are auto-detected if present)
 
-### 3. ingest knowledge base
-embed town council policies and service schedules into the local chroma vector store:
+### 3. Build the Semantic RAG Index
 ```bash
 python ingest.py
 ```
 
-### 4. launch the resident bot
+### 4. Launch the Telegram Bot & Staff Dashboard
+In terminal 1:
 ```bash
 python bot.py
 ```
-
-### 5. launch the staff operations dashboard
-in a separate terminal, open the management workbench:
+In terminal 2:
 ```bash
 streamlit run dashboard.py
 ```
 
-## evaluation & benchmarking
-run the accuracy and refusal test suite:
+## Evaluation & Automated Tests
+
+Run the RAG benchmark (Hit Rate @ 3, MRR, In-Scope Accuracy, and Out-of-Scope Refusal):
 ```bash
+cd council-bot
 python eval.py
 ```
 
-## license
+Run the automated pytest suite (Semantic RAG, hot re-indexing, routing, duplicate merging, and mocked Trello work-order submission):
+```bash
+cd council-bot
+pytest test_suite.py -v
+```
 
-distributed under the mit license.
+## License
+
+Distributed under the MIT License.

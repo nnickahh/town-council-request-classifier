@@ -1,9 +1,132 @@
 [
-  {"q": "When is general waste collected?", "must_contain": ["Tuesday"]},
-  {"q": "How much does a resident parking permit cost?", "must_contain": ["40"]},
-  {"q": "What time does the council office open on Saturday?", "must_contain": ["closed"]},
-  {"q": "How do I book bulky waste pickup?", "must_contain": ["bulky"]},
-  {"q": "What documents do I need for a parking permit?", "must_contain": ["proof of address"]},
-  {"q": "What's the best pizza place in town?", "expect_no_answer": true},
-  {"q": "Who won the football match yesterday?", "expect_no_answer": true}
+  {
+    "q": "How many bulky items can an HDB household remove for free each month?",
+    "expected_doc": "bulky_item_removal.md",
+    "must_contain": ["three", "month"]
+  },
+  {
+    "q": "Can I throw away my old sofa and fridge using free bulky item removal?",
+    "expected_doc": "bulky_item_removal.md",
+    "must_contain": ["sofa"]
+  },
+  {
+    "q": "Are renovation debris or upright pianos included in free bulky disposal?",
+    "expected_doc": "bulky_item_removal.md",
+    "must_contain": ["piano"]
+  },
+  {
+    "q": "How many days in advance must I book bulky item removal?",
+    "expected_doc": "bulky_item_removal.md",
+    "must_contain": ["three", "five"]
+  },
+  {
+    "q": "What is the minimum clear corridor width required for SCDF fire safety?",
+    "expected_doc": "corridor_fire_safety.md",
+    "must_contain": ["1.2"]
+  },
+  {
+    "q": "Can I put a shoe rack and potted plants outside my flat along the corridor?",
+    "expected_doc": "corridor_fire_safety.md",
+    "must_contain": ["1.2"]
+  },
+  {
+    "q": "What are the permitted hours for noisy renovation drilling and hacking?",
+    "expected_doc": "renovation_and_noise.md",
+    "must_contain": ["9:00 AM", "5:00 PM"]
+  },
+  {
+    "q": "Is noisy renovation allowed on Sundays or Public Holidays?",
+    "expected_doc": "renovation_and_noise.md",
+    "must_contain": ["Sunday"]
+  },
+  {
+    "q": "What time do estate quiet hours start at night?",
+    "expected_doc": "renovation_and_noise.md",
+    "must_contain": ["10:30 PM"]
+  },
+  {
+    "q": "What is the fine for feeding pigeons or crows under the Wildlife Act?",
+    "expected_doc": "bird_feeding_and_strays.md",
+    "must_contain": ["$5,000"]
+  },
+  {
+    "q": "Can residents feed community cats and what are the TNRM cleanup rules?",
+    "expected_doc": "bird_feeding_and_strays.md",
+    "must_contain": ["two"]
+  },
+  {
+    "q": "Can HDB flat owners keep a dog under Project ADORE?",
+    "expected_doc": "bird_feeding_and_strays.md",
+    "must_contain": ["ADORE"]
+  },
+  {
+    "q": "What should I do if I am trapped inside an HDB lift?",
+    "expected_doc": "emergency_emsu_lifts.md",
+    "must_contain": ["EMSU"]
+  },
+  {
+    "q": "How long does EMSU take to arrive for a lift rescue?",
+    "expected_doc": "emergency_emsu_lifts.md",
+    "must_contain": ["15", "20"]
+  },
+  {
+    "q": "How can I pay my monthly Service and Conservancy Charges S&CC?",
+    "expected_doc": "service_conservancy_charges.md",
+    "must_contain": ["GIRO"]
+  },
+  {
+    "q": "Do I need to apply manually for government S&CC rebates?",
+    "expected_doc": "service_conservancy_charges.md",
+    "must_contain": ["automatically"]
+  },
+  {
+    "q": "How do Town Councils prevent dengue and mosquito breeding in estates?",
+    "expected_doc": "pest_control_dengue.md",
+    "must_contain": ["BTI"]
+  },
+  {
+    "q": "What are the Town Council branch counter operating hours on Saturday?",
+    "expected_doc": "town_council_operating_hours.md",
+    "must_contain": ["8:00 AM", "1:00 PM"]
+  },
+  {
+    "q": "Is the Town Council office open on Sundays?",
+    "expected_doc": "town_council_operating_hours.md",
+    "must_contain": ["Closed"]
+  },
+  {
+    "q": "How much is the rental fee and security deposit to book a void deck?",
+    "expected_doc": "void_deck_hall_booking.md",
+    "must_contain": ["$50", "$200"]
+  },
+  {
+    "q": "How do I book a void deck urgently for a funeral wake?",
+    "expected_doc": "void_deck_hall_booking.md",
+    "must_contain": ["Death Certificate"]
+  },
+  {
+    "q": "What time must amplified music stop for void deck events?",
+    "expected_doc": "void_deck_hall_booking.md",
+    "must_contain": ["10:30 PM"]
+  },
+  {
+    "q": "What is the best pizza place in Singapore?",
+    "expect_no_answer": true
+  },
+  {
+    "q": "Who won the Premier League football match yesterday?",
+    "expect_no_answer": true
+  },
+  {
+    "q": "How do I renew my Singapore passport online at ICA?",
+    "expect_no_answer": true
+  },
+  {
+    "q": "What is the stock price of Apple today?",
+    "expect_no_answer": true
+  },
+  {
+    "q": "Can you recommend a cheap flight to Tokyo next month?",
+    "expect_no_answer": true
+  }
 ]

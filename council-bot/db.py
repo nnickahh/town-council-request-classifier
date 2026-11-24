@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS tickets (
     ai_diagnosis TEXT,
     severity TEXT DEFAULT 'normal',
     subscribers TEXT DEFAULT '[]',
+    trello_card_id TEXT,
+    trello_card_url TEXT,
     status TEXT NOT NULL DEFAULT 'open',
     staff_note TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -65,6 +67,8 @@ def init():
             ("ai_diagnosis", "TEXT"),
             ("severity", "TEXT DEFAULT 'normal'"),
             ("subscribers", "TEXT DEFAULT '[]'"),
+            ("trello_card_id", "TEXT"),
+            ("trello_card_url", "TEXT"),
         ]
         for col, col_type in migrations:
             if col not in cols:
@@ -127,6 +131,14 @@ def subscribe_to_ticket(ticket_id, user_id):
 def get_ticket(ticket_id):
     with conn() as c:
         return c.execute("SELECT * FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
+
+
+def set_trello_card(ticket_id, card_id, card_url):
+    with conn() as c:
+        c.execute(
+            "UPDATE tickets SET trello_card_id = ?, trello_card_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (card_id, card_url, ticket_id),
+        )
 
 
 def set_status(ticket_id, status, note=None):
