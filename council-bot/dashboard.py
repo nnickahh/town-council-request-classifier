@@ -12,6 +12,10 @@ import streamlit as st
 
 import config
 import db
+import ingest
+import pdf_converter
+import policy_editor
+import rag
 import trello_client
 
 st.set_page_config(page_title=f"{config.COUNCIL_NAME} · Operations", page_icon="🏛️", layout="wide")
@@ -86,7 +90,13 @@ def render():
     c[3].metric("Bot Answer Rate", rate)
     c[4].metric("👍 / 👎 Feedback", f"{s['up']} / {s['down']}")
 
-    tab_m, tab_t, tab_q, tab_f = st.tabs(["🗺️ Live GIS Map", "🎫 Tickets Queue", "❓ Unanswered Questions", "📊 Analytics & Insights"])
+    tab_m, tab_t, tab_q, tab_kb, tab_f = st.tabs([
+        "🗺️ Live GIS Map",
+        "🎫 Tickets Queue",
+        "❓ Unanswered Questions",
+        "📄 KB & Policy Copilot",
+        "📊 Analytics & Insights",
+    ])
 
     # ----------------- TAB 1: 3D GIS HEATMAP -----------------
     with tab_m:
@@ -242,7 +252,147 @@ def render():
                     st.toast("Sent ✅" if sent else "Saved (could not message resident)")
                     st.rerun()
 
-    # ----------------- TAB 4: ANALYTICS -----------------
+    # ----------------- TAB 4: KB INGESTION, SEMANTIC RAG & POLICY COPILOT -----------------
+    with tab_kb:
+        st.subheader("PDF Handbook Ingestion, Semantic RAG Tester & Living Policy Copilot")
+        sub_rag, sub_pdf, sub_pol = st.tabs([
+            "🔍 Semantic RAG FAQ Tester",
+            "📥 PDF-to-Markdown Ingestion",
+            "✍️ Policy Copilot (HITL)",
+        ])
+
+        with sub_rag:
+            engine = rag.get_engine()
+            n_chunks = engine.initialize()
+            st.caption(
+                f"Active backend: `{engine.embedding_provider.backend_name}` · "
+                f"**{n_chunks}** semantic chunks across **{len(policy_editor.list_policy_documents())}** policy docs"
+            )
+            presets = [
+                "How many bulky items can an HDB household remove for free each month?",
+                "What is the 1.2m corridor fire safety rule?",
+                "What are the permitted hours for noisy renovation drilling?",
+                "What is the fine for feeding pigeons?",
+                "How do I book a void deck for a funeral wake?",
+                "What is the best pizza place in Singapore? (out-of-scope refusal test)",
+            ]
+            preset = st.selectbox("Quick FAQ test presets", ["(Type your own below)"] + presets, key="rag_preset")
+            default_q = "" if preset == "(Type your own below)" else preset.replace(" (out-of-scope refusal test)", "")
+            q_input = st.text_input("Ask a resident FAQ question", value=default_q, key="rag_query_input")
+            if st.button("Run Semantic Hybrid RAG", type="primary", key="rag_run_btn") and q_input.strip():
+                res = asyncio.run(rag.answer(q_input.strip()))
+                if res["answer"] is None:
+                    st.warning(
+                        f"Refused (score={res['best_score']:.2f}, dist={res['best_distance']}) — "
+                        "would escalate cleanly to Town Council staff."
+                    )
+                else:
+                    st.success(f"Grounded Answer (score={res['best_score']:.2f}, model=`{res['model_used']}`)")
+                    st.markdown(res["answer"])
+                    if res["sources"]:
+                        st.caption("Sources: " + " · ".join(f"{s['title']} ({s['updated']})" for s in res["sources"]))
+                with st.expander("Retrieved Semantic Chunks & Breadcrumbs"):
+                    for idx, ch in enumerate(res.get("retrieved_chunks", []), 1):
+                        st.markdown(f"**{idx}.** `{ch['breadcrumb']}` (`{ch['source_file']}`)")
+
+        with sub_pdf:
+            st.caption("Upload a Town Council PDF circular or handbook to convert into Markdown and hot-reindex Semantic RAG.")
+            uploaded = st.file_uploader("Upload PDF handbook (.pdf)", type=["pdf"], key="kb_pdf_upload")
+            engine_choice = st.selectbox("Conversion engine", ["auto", "pypdf", "pymupdf", "gemini"], key="kb_pdf_engine")
+            if uploaded is not None and st.button("Convert PDF → Markdown & Hot Re-Index", type="primary", key="kb_pdf_btn"):
+                try:
+                    out_md, conv = pdf_converter.ingest_pdf_bytes_to_kb(
+                        uploaded.getvalue(),
+                        uploaded.name,
+                        policy_editor.DOCS_DIR,
+                        engine=engine_choice,
+                    )
+                    chunks = rag.get_engine().reindex()
+                    st.success(
+                        f"Converted `{uploaded.name}` → `{out_md.name}` "
+                        f"({conv.page_count} pages, {conv.table_count} tables, {conv.word_count} words via `{conv.engine_used}`). "
+                        f"Semantic RAG hot-reindexed ({chunks} chunks)!"
+                    )
+                    with st.expander("Preview Converted Markdown"):
+                        st.code(conv.markdown_text[:3000], language="markdown")
+                except Exception as exc:
+                    st.error(f"PDF conversion failed: {exc}")
+
+            st.markdown("**Indexed Knowledge Base Documents (`data/docs/`):**")
+            for doc in policy_editor.list_policy_documents():
+                st.caption(f"• `{doc.name}` ({doc.stat().st_size:,} bytes)")
+
+        with sub_pol:
+            st.caption("Amend Town Council policy documents in natural language with visual diff review, audit logs, and 1-click rollback.")
+            docs = policy_editor.list_policy_documents()
+            if not docs:
+                st.info("No policy documents found in data/docs/.")
+            else:
+                doc_names = [d.name for d in docs]
+                sel_name = st.selectbox("Target policy document", doc_names, key="pol_doc_select")
+                sel_path = next(d for d in docs if d.name == sel_name)
+                doc_text = sel_path.read_text(encoding="utf-8")
+                sections = policy_editor.parse_handbook_sections(doc_text)
+
+                intent_text = st.text_input(
+                    "Describe the policy change in plain English",
+                    placeholder="e.g. Increase refundable security deposit from $200 to $300",
+                    key="pol_intent_input",
+                )
+                author_name = st.text_input("Officer name", value="Council Officer", key="pol_author")
+
+                if st.button("Draft Surgical Amendment", type="primary", key="pol_draft_btn") and intent_text.strip():
+                    target_sec, score, rationale = policy_editor.locate_target_section(sections, intent_text.strip())
+                    proposal = policy_editor.generate_policy_amendment(target_sec, intent_text.strip())
+                    st.session_state["pol_proposal"] = proposal
+                    st.session_state["pol_doc_path"] = str(sel_path)
+                    st.session_state["pol_rationale"] = rationale
+
+                proposal = st.session_state.get("pol_proposal")
+                if proposal and st.session_state.get("pol_doc_path") == str(sel_path):
+                    st.info(f"🎯 **Localized Section:** `{proposal.section.breadcrumb}` — {st.session_state.get('pol_rationale', '')}")
+                    st.markdown(
+                        f"**Summary ({proposal.model_used}):** {proposal.explanation} "
+                        f"(+{proposal.additions_count} / -{proposal.deletions_count} lines)"
+                    )
+                    st.markdown(policy_editor.render_diff_html(proposal.diff_lines), unsafe_allow_html=True)
+
+                    c_apply, c_clear = st.columns(2)
+                    if c_apply.button("✅ Approve, Apply & Hot Re-Index", type="primary", key="pol_apply_btn"):
+                        ok, rec, msg = policy_editor.apply_amendment_to_handbook(
+                            sel_path,
+                            proposal.section,
+                            proposal.proposed_raw_block,
+                            proposal.intent,
+                            proposal.explanation,
+                            author=author_name or "Council Officer",
+                        )
+                        st.session_state.pop("pol_proposal", None)
+                        st.toast(msg)
+                        st.rerun()
+                    if c_clear.button("Discard Draft", key="pol_discard_btn"):
+                        st.session_state.pop("pol_proposal", None)
+                        st.rerun()
+
+                history = policy_editor.load_audit_history(limit=10)
+                if history:
+                    st.divider()
+                    st.markdown("**Recent Amendment Audit Trail & 1-Click Rollback**")
+                    for item in history:
+                        with st.container(border=True):
+                            st.markdown(
+                                f"**[{item['status']}]** `{item['document_name']}` → `{item['target_section']}` "
+                                f"by *{item['author']}* ({item['timestamp'][:19]} UTC)"
+                            )
+                            st.caption(f"Intent: {item['intent']} · Backup: `{item['backup_file']}`")
+                            if item["status"] == "APPLIED":
+                                target_doc = policy_editor.DOCS_DIR / item["document_name"]
+                                if st.button("↩️ Rollback to this snapshot", key=f"rb_{item['log_id']}"):
+                                    ok, msg = policy_editor.rollback_amendment(target_doc, item["backup_file"])
+                                    st.toast(msg)
+                                    st.rerun()
+
+    # ----------------- TAB 5: ANALYTICS -----------------
     with tab_f:
         cols = st.columns(3)
         all_t = db.list_tickets()

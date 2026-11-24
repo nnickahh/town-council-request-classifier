@@ -18,6 +18,7 @@ __pycache__/
 council.db
 chroma_db/
 semantic_rag_index.json
+council-bot/data/backups/
 
 # OS and IDE files
 .DS_Store

@@ -407,6 +407,9 @@ class SemanticChunker:
         title_override: str | None = None,
         updated_override: str | None = None,
     ) -> list[SemanticChunk]:
+        from pdf_converter import heal_page_break_splits
+
+        markdown_text = heal_page_break_splits(markdown_text)
         fallback_title = Path(source_file).stem.replace("_", " ").title()
         doc_title, updated, body = parse_document_metadata(markdown_text, fallback_title)
         if title_override:

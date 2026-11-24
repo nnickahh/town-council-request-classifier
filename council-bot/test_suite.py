@@ -239,3 +239,130 @@ def test_trello_from_env_and_work_order_lifecycle(monkeypatch):
 
     # 4. Sync dashboard status update works cleanly
     assert client.update_status_sync("card_999", "in progress", "Crew en route") is True
+
+
+# ============================================================================
+# PDF-to-Markdown Ingestion Pipeline Tests
+# ============================================================================
+
+def test_pdf_converter_heals_page_breaks_and_cleans_artifacts():
+    import pdf_converter
+
+    raw = (
+        "<!-- Start of picture text -->\n"
+        "Page 1 of 12\n\n"
+        "# Town Council Handbook\n\n"
+        "Residents must keep corridors clean and\n\n"
+        "unobstructed at all times.\n\n"
+        "| Service | Fee |\n"
+        "| --- | --- |\n"
+        "| Void Deck | $50 |\n\n"
+        "Page 2 of 12\n"
+    )
+    cleaned = pdf_converter.clean_markdown_artifacts(raw)
+    assert "Page 1 of 12" not in cleaned
+    assert "Start of picture text" not in cleaned
+    assert "clean and unobstructed at all times." in cleaned
+    assert pdf_converter.count_markdown_tables(cleaned) == 1
+    assert pdf_converter.extract_headings(cleaned)[0]["title"] == "Town Council Handbook"
+
+
+# ============================================================================
+# Handbook Policy Copilot (HITL) Tests
+# ============================================================================
+
+def test_policy_copilot_amend_audit_and_rollback(tmp_path):
+    import policy_editor
+
+    doc_path = tmp_path / "void_deck_test.md"
+    original = (
+        "# Void Deck Bookings\n"
+        "Updated: 2026-03\n\n"
+        "Fees, Deposits, and Utilities:\n"
+        "- Daily space rental fees range from $50 to $150 per day.\n"
+        "- Refundable security deposit is $200 per event.\n\n"
+        "Regulations:\n"
+        "- Amplified music must cease by 10:30 PM.\n"
+    )
+    doc_path.write_text(original, encoding="utf-8")
+    backups_dir = tmp_path / "backups"
+
+    sections = policy_editor.parse_handbook_sections(original)
+    assert len(sections) >= 3
+
+    target, score, rationale = policy_editor.locate_target_section(
+        sections, "Increase security deposit from $200 to $300", use_llm=False
+    )
+    assert "Fees" in target.title
+    assert score > 0
+
+    proposal = policy_editor.generate_policy_amendment(
+        target, "Increase security deposit from $200 to $300"
+    )
+    assert "$300" in proposal.proposed_raw_block
+    assert proposal.additions_count >= 1
+    assert "background-color: #e6ffed" in policy_editor.render_diff_html(proposal.diff_lines)
+
+    ok, record, msg = policy_editor.apply_amendment_to_handbook(
+        doc_path,
+        target,
+        proposal.proposed_raw_block,
+        proposal.intent,
+        proposal.explanation,
+        author="Officer Tan",
+        backups_dir=backups_dir,
+    )
+    assert ok is True
+    assert "$300" in doc_path.read_text(encoding="utf-8")
+    history = policy_editor.load_audit_history(backups_dir=backups_dir)
+    assert len(history) == 1
+    assert history[0]["status"] == "APPLIED"
+
+    # 1-Click Rollback restores original $200 text
+    rb_ok, rb_msg = policy_editor.rollback_amendment(
+        doc_path, record.backup_file, backups_dir=backups_dir
+    )
+    assert rb_ok is True
+    assert "$200" in doc_path.read_text(encoding="utf-8")
+    assert "$300" not in doc_path.read_text(encoding="utf-8")
+
+
+# ============================================================================
+# FAQ Benchmark Dataset Test (from Dylan's condo_faq.csv + faq_eval.csv)
+# ============================================================================
+
+def test_semantic_rag_against_benchmark_faq_dataset(tmp_path):
+    import csv
+
+    bench_dir = Path(__file__).resolve().parent / "data" / "benchmarks"
+    faq_csv = bench_dir / "condo_faq.csv"
+    eval_csv = bench_dir / "faq_eval.csv"
+    assert faq_csv.exists() and eval_csv.exists()
+
+    # Convert FAQ CSV rows into markdown docs inside tmp_path to verify Semantic RAG FAQ accuracy
+    faq_docs_dir = tmp_path / "faq_docs"
+    faq_docs_dir.mkdir()
+    with faq_csv.open(encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            md = f"# {row['question']}\nUpdated: 2026-04\n\nAnswer:\n{row['answer']}\n\nKeywords:\n{row['keywords']}\n"
+            (faq_docs_dir / f"{row['id']}.md").write_text(md, encoding="utf-8")
+
+    engine = TownCouncilSemanticRAG(docs_dir=faq_docs_dir, index_path=tmp_path / "faq_idx.json")
+    assert engine.initialize() >= 30
+
+    hits = 0
+    total_faq = 0
+    with eval_csv.open(encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            expected_id = (row.get("faq_id") or "").strip()
+            if not expected_id:
+                continue
+            total_faq += 1
+            res = engine.query(row["text"], top_k=3)
+            top_stems = [Path(c.source_file).stem for c in res.retrieved_chunks[:3]]
+            if expected_id in top_stems:
+                hits += 1
+
+    assert total_faq >= 30
+    assert hits / total_faq >= 0.85
+

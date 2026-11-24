@@ -27,8 +27,12 @@ Real-time Telegram resident assistant, Semantic Hybrid RAG policy engine, and au
 - **Automated Trello Work-Order Dispatch (`trello_client.py`)**:
   - Automatically submits resident fault reports as structured Trello cards (routing **High / Critical** faults straight to `Urgent` with SLA due dates and routine faults to `To Do`).
   - Logs duplicate neighbour subscriptions as card comments and syncs `/progress`, `/resolve`, and dashboard status updates to `In Progress` / `Done` lists.
+- **PDF-to-Markdown Handbook Ingestion (`pdf_converter.py` + `ingest.py`)**:
+  - Converts uploaded or dropped `.pdf` Town Council circulars/handbooks into clean Markdown inside `data/docs/`, preserving tables, removing page-number noise, healing page-break splits, and automatically falling back to Gemini Vision OCR for scanned PDFs.
+- **Handbook Policy Copilot — Human-in-the-Loop (`policy_editor.py`)**:
+  - Officers can amend any policy document in plain English, preview GitHub-style color-coded HTML diffs, apply surgical in-place edits with timestamped backups + immutable JSON audit logs, trigger zero-downtime RAG hot re-indexing, and perform 1-click rollbacks.
 - **Staff Operations Dashboard (`dashboard.py`)**:
-  - Interactive **3D PyDeck GIS incident map** across Singapore, ticket queue with photo & Trello links, unanswered Q&A learning loop, and analytics.
+  - Interactive **3D PyDeck GIS incident map** across Singapore, ticket queue with photo & Trello links, unanswered Q&A learning loop, **KB & Policy Copilot** (FAQ tester, PDF uploader, HITL diff editor), and analytics.
 
 ## Architecture
 
@@ -57,22 +61,25 @@ town-council-request-classifier/
 ├── council-bot/
 │   ├── bot.py                  # Telegram bot handlers, ticket flow & staff commands
 │   ├── semantic_rag.py         # Two-Stage Semantic Hybrid RAG engine & hot re-indexer
+│   ├── pdf_converter.py        # Lossless PDF-to-Markdown ingestion & OCR fallback
+│   ├── policy_editor.py        # Human-in-the-Loop Policy Copilot, diffs, audit & rollback
 │   ├── rag.py                  # RAG facade + intent/category router
 │   ├── trello_client.py        # Trello work-order submission & status sync
-│   ├── dashboard.py            # Streamlit 3D GIS map, ticket queue & KB approval UI
+│   ├── dashboard.py            # Streamlit 3D GIS map, tickets, PDF/Policy Copilot & FAQ tester
 │   ├── vision.py               # Gemini Vision photo damage inspection
 │   ├── council_lookup.py       # OneMap API, postal sector & statutory agency router
 │   ├── create_topics.py        # Auto-creates 17 Town Council Telegram forum topics
 │   ├── db.py                   # SQLite persistence (tickets, subscribers, Trello IDs, logs)
 │   ├── config.py               # Environment settings, RAG thresholds & emergency regex
-│   ├── ingest.py               # Semantic chunking & hybrid index builder
+│   ├── ingest.py               # PDF-to-MD conversion, semantic chunking & index builder
 │   ├── eval.py                 # RAG benchmark harness (Hit Rate @ 3, MRR, Refusal Acc.)
 │   ├── tests.json              # 27 Singapore Town Council + refusal evaluation queries
-│   ├── test_suite.py           # Pytest automated test suite (RAG, routing, DB, Trello)
+│   ├── test_suite.py           # Pytest automated test suite (RAG, PDF, Policy, Routing, Trello)
 │   ├── seed_demo.py            # Demo data seeder for live presentations
 │   ├── requirements.txt        # Python dependencies
 │   ├── .env.example            # Environment variable template (Telegram, Gemini, Trello)
-│   └── data/docs/              # 9 official Singapore Town Council policy guides
+│   ├── data/docs/              # 9 official Singapore Town Council policy guides
+│   └── data/benchmarks/        # FAQ & request benchmark CSV datasets for RAG testing
 ├── .gitignore
 └── readme.md
 ```
